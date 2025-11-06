@@ -7,19 +7,45 @@ class CoTModel(BaseLLM):
             {
                 "role": "system",
                 "content": (
-                    "You are a math assistant. "
-                    "Solve simple word problems. "
-                    "Give only the final numeric answer inside <answer></answer> tags. "
-                    "Do not include any explanation or extra words."
+                    "You are a precise math tutor. "
+                    "Convert between measurement units carefully (meters, feet, yards, miles, inches, etc). "
+                    "Show one brief reasoning step. "
+                    "At the end, give ONLY the numeric result, with no units or text, "
+                    "inside <answer></answer> tags. "
+                    "Do not include spaces or words outside the tags."
                 ),
             },
             {
                 "role": "user",
-                "content": "If a car travels 150 miles in 3 hours, what is its speed?",
+                "content": "Convert 3 meters to feet.",
             },
             {
                 "role": "assistant",
-                "content": "<answer>50</answer>",
+                "content": "1 meter = 3.28084 feet. 3 × 3.28084 = 9.84252. <answer>9.84252</answer>",
+            },
+            {
+                "role": "user",
+                "content": "Convert 5 feet to inches.",
+            },
+            {
+                "role": "assistant",
+                "content": "1 foot = 12 inches. 5 × 12 = 60. <answer>60</answer>",
+            },
+            {
+                "role": "user",
+                "content": "Convert 2 miles to yards.",
+            },
+            {
+                "role": "assistant",
+                "content": "1 mile = 1760 yards. 2 × 1760 = 3520. <answer>3520</answer>",
+            },
+            {
+                "role": "user",
+                "content": "Convert 36 inches to feet.",
+            },
+            {
+                "role": "assistant",
+                "content": "1 foot = 12 inches. 36 ÷ 12 = 3. <answer>3</answer>",
             },
             {
                 "role": "user",
