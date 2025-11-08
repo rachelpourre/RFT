@@ -49,7 +49,19 @@ def format_example(prompt: str, answer: str) -> dict[str, str]:
     """
     Construct a question / answer pair. Consider rounding the answer to make it easier for the LLM.
     """
-    raise NotImplementedError()
+    q = prompt.replace("<answer>", "").replace("</answer>", "").strip()
+    a = str(answer).replace("<answer>", "").replace("</answer>", "").strip()
+
+    # Round numeric answers for stability
+    try:
+        ans_val = round(float(a), 4)
+        ans_str = str(ans_val)
+    except Exception:
+        ans_str = a
+
+    formatted_question = q
+    formatted_answer = f" <answer>{ans_str}</answer>"
+    return {"question": formatted_question, "answer": formatted_answer}
 
 
 class TokenizedDataset:
@@ -78,8 +90,66 @@ def train_model(
     output_dir: str,
     **kwargs,
 ):
-    raise NotImplementedError()
-    test_model(output_dir)
+    import torch
+    from transformers import TrainingArguments, Trainer, DataCollatorForLanguageModeling
+    from peft import LoraConfig, get_peft_model
+    from pathlib import Path
+    from .data import Dataset
+    from .base_llm import BaseLLM
+
+    llm = BaseLLM()
+
+    # Apply LoRA adapters
+    lora_config = LoraConfig(
+        r=8,
+        lora_alpha=32,
+        target_modules="all-linear",
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+    llm.model = get_peft_model(llm.model, lora_config)
+
+    if torch.cuda.is_available():
+        llm.model.enable_input_require_grads()
+
+    # Load datasets
+    train_data = Dataset("train")
+    val_data = Dataset("valid")
+
+    tokenized_train = TokenizedDataset(llm.tokenizer, train_data, format_example)
+    tokenized_val = TokenizedDataset(llm.tokenizer, val_data, format_example)
+
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=8,
+        num_train_epochs=3,
+        learning_rate=5e-5,
+        gradient_checkpointing=True,
+        save_strategy="epoch",
+        eval_strategy="epoch",  
+        logging_steps=10,
+        remove_unused_columns=False,
+        report_to=[],  # disable wandb/tensorboard auto-reporting
+    )
+
+    data_collator = DataCollatorForLanguageModeling(tokenizer=llm.tokenizer, mlm=False)
+
+    trainer = Trainer(
+        model=llm.model,
+        args=args,
+        train_dataset=tokenized_train,
+        eval_dataset=tokenized_val,
+        data_collator=data_collator,
+    )
+
+    trainer.train()
+
+    # Save under 'sft_model' subfolder
+    #save_path = Path(output_dir) / "sft_model"
+    #save_path.mkdir(parents=True, exist_ok=True)
+    #llm.model.save_pretrained(save_path)
+    # Save directly into the output directory
+    llm.model.save_pretrained(output_dir)
 
 
 def test_model(ckpt_path: str):
