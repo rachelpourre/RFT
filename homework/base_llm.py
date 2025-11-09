@@ -20,7 +20,7 @@ class BaseLLM:
         better if you provide a chat template. self.tokenizer.apply_chat_template can help here
         You don't need to change this function for now.
         """
-        return question
+        return f"Question: {question}\nRespond only with a number in the format <answer>value</answer>."
 
     def parse_answer(self, answer: str) -> float:
         """

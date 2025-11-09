@@ -1,10 +1,15 @@
 from .base_llm import BaseLLM
 from .data import Dataset, benchmark
 
+import torch
+from torch.utils.data import DataLoader
+from transformers import Trainer, TrainingArguments
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from tqdm import tqdm
+
 
 def load() -> BaseLLM:
     from pathlib import Path
-
     from peft import PeftModel
 
     model_name = "sft_model"
@@ -13,7 +18,6 @@ def load() -> BaseLLM:
     llm = BaseLLM()
     llm.model = PeftModel.from_pretrained(llm.model, model_path).to(llm.device)
     llm.model.eval()
-
     return llm
 
 
@@ -34,9 +38,8 @@ def tokenize(tokenizer, question: str, answer: str):
     input_ids = full["input_ids"]
     question_len = len(tokenizer(question)["input_ids"])
 
-    # Create labels: mask out the prompt part
+    # Mask prompt portion
     labels = [-100] * question_len + input_ids[question_len:]
-
     for i in range(len(labels)):
         if full["attention_mask"][i] == 0:
             labels[i] = -100
@@ -47,21 +50,23 @@ def tokenize(tokenizer, question: str, answer: str):
 
 def format_example(prompt: str, answer: str) -> dict[str, str]:
     """
-    Construct a question / answer pair. Consider rounding the answer to make it easier for the LLM.
+    Construct a question / answer pair. Round answer and wrap in <answer> tags.
+    Example:
+        Input: ("How many cm in one meter?", 100)
+        Output: {"question": "How many cm in one meter?", "answer": "<answer>100</answer>"}
     """
-    raise NotImplementedError()
+    try:
+        ans = round(float(answer), 6)
+    except Exception:
+        ans = answer
+
+    question = f"Question: {prompt}\nRespond only with a number in the format <answer>value</answer>."
+    formatted_answer = f"<answer>{ans}</answer>"
+    return {"question": question, "answer": formatted_answer}
 
 
 class TokenizedDataset:
     def __init__(self, tokenizer, data: Dataset, format_fn):
-        """
-        Use the
-        - BaseLLM.tokenizer
-        - Dataset
-        - format_fn which converts a data element into a dict with entries
-          - question: str
-          - answer: str
-        """
         self.format_fn = format_fn
         self.tokenizer = tokenizer
         self.data = data
@@ -70,32 +75,81 @@ class TokenizedDataset:
         return len(self.data)
 
     def __getitem__(self, idx):
-        formated_data = self.format_fn(*self.data[idx])
-        return tokenize(self.tokenizer, **formated_data)
+        formatted = self.format_fn(*self.data[idx])
+        return tokenize(self.tokenizer, **formatted)
 
 
-def train_model(
-    output_dir: str,
-    **kwargs,
-):
-    raise NotImplementedError()
+def train_model(output_dir: str, num_train_epochs: int = 8, batch_size: int = 8, lr: float = 5e-4):
+    """
+    Fine-tune the model using LoRA adapters on the provided dataset.
+    Saves trained adapters to `output_dir`.
+    """
+    trainset = Dataset("train")
+    valset = Dataset("valid")
+
+    base_llm = BaseLLM()
+    model = base_llm.model
+    tokenizer = base_llm.tokenizer
+
+    # Prepare model for LoRA fine-tuning
+    model = prepare_model_for_kbit_training(model)
+
+    peft_config = LoraConfig(
+        r=8,
+        lora_alpha=16,
+        target_modules=["q_proj", "v_proj"],
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+    model = get_peft_model(model, peft_config)
+
+    train_data = TokenizedDataset(tokenizer, trainset, format_example)
+    val_data = TokenizedDataset(tokenizer, valset, format_example)
+
+    # New-style TrainingArguments (transformers >=4.50)
+    args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        num_train_epochs=num_train_epochs,
+        learning_rate=lr,
+        logging_steps=20,
+        save_strategy="epoch",  # still valid
+        eval_strategy="epoch",  # correct key for 4.52.4
+        warmup_ratio=0.03,
+        fp16=torch.cuda.is_available(),
+        report_to=[],  # disables unwanted integrations (wandb, etc.)
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=args,
+        train_dataset=train_data,
+        eval_dataset=val_data,
+        tokenizer=tokenizer,
+    )
+
+    trainer.train()
+    model.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+
+    print("Training complete.")
     test_model(output_dir)
 
 
 def test_model(ckpt_path: str):
     testset = Dataset("valid")
     llm = BaseLLM()
-
-    # Load the model with LoRA adapters
     from peft import PeftModel
 
     llm.model = PeftModel.from_pretrained(llm.model, ckpt_path).to(llm.device)
+    llm.model.eval()
 
-    benchmark_result = benchmark(llm, testset, 100)
-    print(f"{benchmark_result.accuracy=}  {benchmark_result.answer_rate=}")
+    result = benchmark(llm, testset, 100)
+    print(f"accuracy={result.accuracy:.3f}  answer_rate={result.answer_rate:.3f}")
 
 
 if __name__ == "__main__":
     from fire import Fire
-
     Fire({"train": train_model, "test": test_model, "load": load})
