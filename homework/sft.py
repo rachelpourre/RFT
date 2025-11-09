@@ -79,7 +79,7 @@ class TokenizedDataset:
         return tokenize(self.tokenizer, **formatted)
 
 
-def train_model(output_dir: str, num_train_epochs: int = 8, batch_size: int = 8, lr: float = 5e-4):
+def train_model(output_dir: str, num_train_epochs: int = 10, batch_size: int = 8, lr: float = 1e-3):
     """
     Fine-tune the model using LoRA adapters on the provided dataset.
     Saves trained adapters to `output_dir`.
@@ -95,10 +95,10 @@ def train_model(output_dir: str, num_train_epochs: int = 8, batch_size: int = 8,
     model = prepare_model_for_kbit_training(model)
 
     peft_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=16,
+        lora_alpha=32,
         target_modules=["q_proj", "v_proj"],
-        lora_dropout=0.05,
+        lora_dropout=0.01,
         bias="none",
         task_type="CAUSAL_LM",
     )
