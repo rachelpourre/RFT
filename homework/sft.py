@@ -91,7 +91,6 @@ def train_model(output_dir: str, num_train_epochs: int = 10, batch_size: int = 8
     model = base_llm.model
     tokenizer = base_llm.tokenizer
 
-    # Prepare model for LoRA fine-tuning
     model = prepare_model_for_kbit_training(model)
 
     peft_config = LoraConfig(
@@ -107,7 +106,6 @@ def train_model(output_dir: str, num_train_epochs: int = 10, batch_size: int = 8
     train_data = TokenizedDataset(tokenizer, trainset, format_example)
     val_data = TokenizedDataset(tokenizer, valset, format_example)
 
-    # New-style TrainingArguments (transformers >=4.50)
     args = TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=batch_size,
@@ -115,11 +113,11 @@ def train_model(output_dir: str, num_train_epochs: int = 10, batch_size: int = 8
         num_train_epochs=num_train_epochs,
         learning_rate=lr,
         logging_steps=20,
-        save_strategy="epoch",  # still valid
-        eval_strategy="epoch",  # correct key for 4.52.4
+        save_strategy="epoch",  
+        eval_strategy="epoch",  
         warmup_ratio=0.03,
         fp16=torch.cuda.is_available(),
-        report_to=[],  # disables unwanted integrations (wandb, etc.)
+        report_to=[],  
     )
 
     trainer = Trainer(

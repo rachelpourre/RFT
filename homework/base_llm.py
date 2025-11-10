@@ -91,11 +91,8 @@ class BaseLLM:
         Pro Tip: Only batch_decode generated tokens by masking out the inputs with
                  outputs[:, len(inputs["input_ids"][0]) :]
         """
-        from tqdm import tqdm  # Importing tqdm for progress bar
+        from tqdm import tqdm 
 
-        # Preventing OOM
-        # Depending on your GPU batched generation will use a lot of memory.
-        # If you run out of memory, try to reduce the micro_batch_size.
         micro_batch_size = 32
         if len(prompts) > micro_batch_size:
             return [
@@ -106,7 +103,6 @@ class BaseLLM:
                 for r in self.batched_generate(prompts[idx : idx + micro_batch_size], num_return_sequences, temperature)
             ]
 
-        # Tokenizer
         self.tokenizer.padding_side = "left"
         inputs = self.tokenizer(
             prompts,
@@ -115,7 +111,6 @@ class BaseLLM:
             return_tensors = "pt",
         ).to(self.device)
 
-        # Generation, parameters
         do_sample = temperature > 0
         num_return_sequences = num_return_sequences or 1
 
@@ -129,7 +124,6 @@ class BaseLLM:
             pad_token_id = self.tokenizer.pad_token_id,
         )
 
-        # Decoder
         gen_tokens = outputs[:, inputs["input_ids"].shape[1]:]
         decoded = self.tokenizer.batch_decode(gen_tokens, skip_special_tokens = True)
 
@@ -146,7 +140,6 @@ class BaseLLM:
         """
         Answer questions given as individual string arguments.
         """
-        # Convert each question
         prompts = [self.format_prompt(q) for q in questions]
         generations = self.batched_generate(prompts)
         return [self.parse_answer(g) for g in generations]
